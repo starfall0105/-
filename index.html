@@ -2,37 +2,66 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>奶蛙吃奶豆</title>
 <style>
-    body { background: #111; color: #fff; text-align: center; font-family: sans-serif; margin: 0; padding: 20px; }
-    canvas { background: #000; display: block; margin: 10px auto; border: 4px solid #ffcc00; border-radius: 10px; }
-    .uploads { margin: 10px 0; }
-    .uploads label { margin: 0 10px; cursor: pointer; background: #333; padding: 8px 14px; border-radius: 5px; display: inline-block; }
+    * { box-sizing: border-box; }
+    body { background: #111; color: #fff; text-align: center; font-family: sans-serif; margin: 0; padding: 18px 12px 28px; }
+    h1 { margin: 8px 0 16px; }
+    canvas { background: #000; display: block; width: min(560px, 100%); height: auto; margin: 12px auto; border: 4px solid #ffcc00; border-radius: 10px; }
+    .uploads, .toolbar { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 10px; margin: 12px auto; }
+    .uploads label { cursor: pointer; background: #333; padding: 9px 12px; border-radius: 6px; display: inline-block; }
     .uploads label:hover { background: #555; }
-    .status { color: #ffcc00; font-weight: bold; margin: 10px 0; font-size: 16px; }
-    .hint { color: #aaa; margin-top: 10px; font-size: 13px; }
+    button, select { font: inherit; border: 0; border-radius: 8px; padding: 10px 16px; }
+    button { cursor: pointer; color: #111; background: #ffcc00; font-weight: bold; }
+    button:hover:not(:disabled) { background: #ffe066; }
+    button:disabled { cursor: not-allowed; opacity: .45; }
+    #endButton { color: #fff; background: #b83232; }
+    #endButton:hover:not(:disabled) { background: #d94343; }
+    select { color: #fff; background: #333; }
+    .status { color: #ffcc00; font-weight: bold; margin: 10px 0; font-size: 16px; min-height: 24px; }
+    .hint { color: #aaa; margin: 10px auto; font-size: 13px; }
+    .touch-controls { display: grid; grid-template-columns: repeat(3, 58px); grid-template-rows: repeat(2, 52px); gap: 7px; justify-content: center; margin: 12px auto; touch-action: manipulation; }
+    .touch-controls button { padding: 0; font-size: 23px; color: #fff; background: #383838; border: 1px solid #666; }
+    .touch-controls button:active:not(:disabled) { background: #666; }
+    .touch-controls .up { grid-column: 2; grid-row: 1; }
+    .touch-controls .left { grid-column: 1; grid-row: 2; }
+    .touch-controls .down { grid-column: 2; grid-row: 2; }
+    .touch-controls .right { grid-column: 3; grid-row: 2; }
+    @media (min-width: 700px) { .touch-controls { display: none; } }
 </style>
 </head>
 <body>
-
 <h1>🐸 奶蛙吃奶豆 🟡</h1>
 <div class="uploads">
     <label>① 奶蛙(图1) <input type="file" id="upFrog" accept="image/*"></label>
     <label>② 奶豆(图2) <input type="file" id="upBean" accept="image/*"></label>
     <label>③ 奶蛋(图3) <input type="file" id="upNaidan" accept="image/*"></label>
 </div>
+<div class="toolbar">
+    <label for="difficulty">难度：</label>
+    <select id="difficulty" aria-label="选择游戏难度">
+        <option value="easy">简单（1个奶蛋，较慢）</option>
+        <option value="normal" selected>普通（2个奶蛋）</option>
+        <option value="hard">困难（3个奶蛋，较快）</option>
+    </select>
+    <button id="startButton" disabled>开始 / 重新开始</button>
+    <button id="endButton" disabled>结束游戏</button>
+</div>
 <div class="status" id="status">⏳ 请上传全部3张图片后开始游戏</div>
-<p class="hint">方向键：按一下走一格 ｜ 吃完所有奶豆获胜 ｜ 躲避奶蛋</p>
-
-<canvas id="game" width="560" height="520"></canvas>
-
+<p class="hint">电脑：方向键移动 ｜ 手机：点击下方方向按钮 ｜ 吃完所有奶豆获胜，躲避奶蛋</p>
+<canvas id="game" width="560" height="520" aria-label="奶蛙吃奶豆游戏画面"></canvas>
+<div class="touch-controls" aria-label="触屏方向控制">
+    <button class="up" data-dir="up" aria-label="向上">▲</button>
+    <button class="left" data-dir="left" aria-label="向左">◀</button>
+    <button class="down" data-dir="down" aria-label="向下">▼</button>
+    <button class="right" data-dir="right" aria-label="向右">▶</button>
+</div>
 <script>
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const tile = 40;
-
-// 地图 (1墙, 0路, 2奶豆)
-const map = [
+const originalMap = [
     [1,1,1,1,1,1,1,1,1,1,1,1,1,1],
     [1,2,2,2,2,2,2,1,2,2,2,2,2,1],
     [1,2,1,1,2,1,2,1,2,1,2,1,2,1],
@@ -47,64 +76,103 @@ const map = [
     [1,2,2,2,2,2,2,2,2,2,2,2,2,1],
     [1,1,1,1,1,1,1,1,1,1,1,1,1,1]
 ];
-
-let totalBeans = 0;
-map.forEach(row => row.forEach(c => { if(c===2) totalBeans++; }));
-
-// 图片
+let map = copyMap();
+function copyMap() { return originalMap.map(row => row.slice()); }
+const totalBeans = originalMap.flat().filter(cell => cell === 2).length;
 const imgs = { frog: null, bean: null, naidan: null };
 let ready = false;
+let playing = false;
+let gameOver = false;
+let win = false;
+let score = 0;
+let lastEnemyMove = 0;
+let frogs = { x: 7, y: 7 };
+let enemies = [];
+let animationId = null;
+const statusEl = document.getElementById('status');
+const startButton = document.getElementById('startButton');
+const endButton = document.getElementById('endButton');
+const difficultySelect = document.getElementById('difficulty');
+const enemySettings = {
+    easy:   { count: 1, interval: 850 },
+    normal: { count: 2, interval: 620 },
+    hard:   { count: 3, interval: 420 }
+};
 
 function checkReady() {
-    if(imgs.frog && imgs.bean && imgs.naidan) {
-        ready = true;
-        document.getElementById('status').innerText = '✅ 就绪！方向键开始（按一下走一格）';
-        document.getElementById('status').style.color = '#00ff00';
+    ready = Boolean(imgs.frog && imgs.bean && imgs.naidan);
+    startButton.disabled = !ready;
+    if (ready && !playing) {
+        statusEl.textContent = '✅ 图片已准备好，选择难度后点击“开始 / 重新开始”';
+        statusEl.style.color = '#00ff00';
     }
 }
 
-['upFrog','upBean','upNaidan'].forEach((id, i) => {
-    document.getElementById(id).onchange = e => {
-        const key = ['frog','bean','naidan'][i];
-        const file = e.target.files[0];
-        if(!file) return;
+['upFrog', 'upBean', 'upNaidan'].forEach((id, i) => {
+    document.getElementById(id).addEventListener('change', event => {
+        const key = ['frog', 'bean', 'naidan'][i];
+        const file = event.target.files[0];
+        if (!file) return;
         const reader = new FileReader();
-        reader.onload = ev => {
-            imgs[key] = new Image();
-            imgs[key].src = ev.target.result;
-            checkReady();
+        reader.onload = loadEvent => {
+            const image = new Image();
+            image.onload = () => { imgs[key] = image; checkReady(); };
+            image.onerror = () => {
+                statusEl.textContent = '❌ 图片读取失败，请换一张图片再试';
+                statusEl.style.color = '#ff7777';
+            };
+            image.src = loadEvent.target.result;
         };
         reader.readAsDataURL(file);
-    };
+    });
 });
 
-// 游戏状态
-let score = 0, gameOver = false, win = false;
-let frameCount = 0;
+function startGame() {
+    if (!ready) return;
+    if (animationId !== null) cancelAnimationFrame(animationId);
+    map = copyMap();
+    score = 0;
+    gameOver = false;
+    win = false;
+    playing = true;
+    lastEnemyMove = 0;
+    frogs = { x: 7, y: 7 };
+    const starts = [{ x: 12, y: 1 }, { x: 1, y: 11 }, { x: 12, y: 11 }];
+    const settings = enemySettings[difficultySelect.value];
+    enemies = starts.slice(0, settings.count).map(pos => ({ ...pos, dx: -1, dy: 0 }));
+    startButton.textContent = '重新开始';
+    endButton.disabled = false;
+    statusEl.textContent = '🎮 游戏开始！';
+    statusEl.style.color = '#00ff00';
+    animationId = requestAnimationFrame(gameLoop);
+}
 
-const frog = { x: 7, y: 7, dx: 0, dy: 0 };
-
-// 只有一个奶蛋，放在右上角
-const naidan = { x: 12, y: 1, dx: -1, dy: 0 };
+function endGame() {
+    if (!playing) return;
+    playing = false;
+    gameOver = true;
+    endButton.disabled = true;
+    statusEl.textContent = '⏹ 游戏已结束，点击“开始 / 重新开始”再玩一次';
+    statusEl.style.color = '#ffcc00';
+    if (animationId !== null) cancelAnimationFrame(animationId);
+    draw();
+}
 
 function drawMap() {
-    for(let y=0; y<map.length; y++) {
-        for(let x=0; x<map[y].length; x++) {
-            const v = map[y][x];
-            if(v===1) {
+    for (let y = 0; y < map.length; y++) {
+        for (let x = 0; x < map[y].length; x++) {
+            const value = map[y][x];
+            if (value === 1) {
                 ctx.fillStyle = '#0044ff';
-                ctx.fillRect(x*tile, y*tile, tile, tile);
+                ctx.fillRect(x * tile, y * tile, tile, tile);
             } else {
                 ctx.fillStyle = '#000';
-                ctx.fillRect(x*tile, y*tile, tile, tile);
-                if(v===2) {
-                    if(imgs.bean) {
-                        ctx.drawImage(imgs.bean, x*tile+8, y*tile+8, 24, 24);
-                    } else {
+                ctx.fillRect(x * tile, y * tile, tile, tile);
+                if (value === 2) {
+                    if (imgs.bean) ctx.drawImage(imgs.bean, x * tile + 8, y * tile + 8, 24, 24);
+                    else {
                         ctx.fillStyle = '#ffcc00';
-                        ctx.beginPath();
-                        ctx.arc(x*tile+20, y*tile+20, 6, 0, Math.PI*2);
-                        ctx.fill();
+                        ctx.beginPath(); ctx.arc(x * tile + 20, y * tile + 20, 6, 0, Math.PI * 2); ctx.fill();
                     }
                 }
             }
@@ -112,101 +180,111 @@ function drawMap() {
     }
 }
 
-function drawFrog() {
-    if(imgs.frog) {
-        ctx.drawImage(imgs.frog, frog.x*tile, frog.y*tile, tile, tile);
-    } else {
-        ctx.fillStyle = '#00ff00';
-        ctx.beginPath();
-        ctx.arc(frog.x*tile+20, frog.y*tile+20, 16, 0, Math.PI*2);
-        ctx.fill();
+function drawCharacter(image, x, y, color) {
+    if (image) ctx.drawImage(image, x * tile, y * tile, tile, tile);
+    else {
+        ctx.fillStyle = color;
+        ctx.beginPath(); ctx.arc(x * tile + 20, y * tile + 20, 16, 0, Math.PI * 2); ctx.fill();
     }
 }
 
-function drawNaidan() {
-    if(imgs.naidan) {
-        ctx.drawImage(imgs.naidan, naidan.x*tile, naidan.y*tile, tile, tile);
-    } else {
-        ctx.fillStyle = '#ff4444';
-        ctx.beginPath();
-        ctx.arc(naidan.x*tile+20, naidan.y*tile+20, 16, 0, Math.PI*2);
-        ctx.fill();
-    }
-}
-
-function moveFrog() {
-    if(!ready || gameOver) return;
-    const nx = frog.x + frog.dx, ny = frog.y + frog.dy;
-    if(map[ny] && map[ny][nx] !== 1) {
-        frog.x = nx; frog.y = ny;
-    }
-    frog.dx = 0; frog.dy = 0; // 走一格停
-
-    if(map[frog.y][frog.x] === 2) {
-        map[frog.y][frog.x] = 0;
-        score++;
-        if(score >= totalBeans) { win = true; gameOver = true; }
-    }
-}
-
-function moveNaidan() {
-    const nx = naidan.x + naidan.dx, ny = naidan.y + naidan.dy;
-    if(map[ny] && map[ny][nx] !== 1) {
-        naidan.x = nx; naidan.y = ny;
-    } else {
-        const dirs = [[0,-1],[0,1],[-1,0],[1,0]];
-        const d = dirs[Math.floor(Math.random()*4)];
-        naidan.dx = d[0]; naidan.dy = d[1];
-    }
-    if(naidan.x === frog.x && naidan.y === frog.y) {
-        gameOver = true; win = false;
-    }
-}
-
-document.addEventListener('keydown', e => {
-    if(!ready || gameOver) return;
-    if(e.key==='ArrowUp')    { frog.dx=0; frog.dy=-1; moveFrog(); }
-    if(e.key==='ArrowDown')  { frog.dx=0; frog.dy=1;  moveFrog(); }
-    if(e.key==='ArrowLeft')  { frog.dx=-1; frog.dy=0; moveFrog(); }
-    if(e.key==='ArrowRight') { frog.dx=1;  frog.dy=0; moveFrog(); }
-});
-
-function gameLoop() {
-    ctx.clearRect(0,0,canvas.width,canvas.height);
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
     drawMap();
-
-    if(ready && !gameOver) {
-        // 奶蛙移动在keydown里触发，这里不重复
-        frameCount++;
-        if(frameCount % 4 === 0) moveNaidan(); // 奶蛋极慢：每4帧才走1步
-    }
-
-    drawFrog();
-    drawNaidan();
-
-    // UI
+    drawCharacter(imgs.frog, frogs.x, frogs.y, '#00ff00');
+    enemies.forEach(enemy => drawCharacter(imgs.naidan, enemy.x, enemy.y, '#ff4444'));
     ctx.fillStyle = '#fff';
     ctx.font = '16px sans-serif';
-    ctx.fillText(`奶豆: ${score} / ${totalBeans}`, 10, 20);
-
-    if(gameOver) {
-        ctx.fillStyle = 'rgba(0,0,0,0.88)';
-        ctx.fillRect(0,0,canvas.width,canvas.height);
-        ctx.fillStyle = win ? '#00ff00' : '#ff0000';
-        ctx.font = 'bold 36px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText(`奶豆: ${score} / ${totalBeans}`, 10, 22);
+    if (gameOver) {
+        ctx.fillStyle = 'rgba(0,0,0,0.78)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = win ? '#00ff00' : '#ff7777';
+        ctx.font = 'bold 32px sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText(win ? '🎉 奶蛙吃撑啦！' : '💀 被奶蛋抓住了！', canvas.width/2, canvas.height/2);
-        ctx.fillStyle = '#fff';
-        ctx.font = '20px sans-serif';
-        ctx.fillText('刷新页面重新开始', canvas.width/2, canvas.height/2+40);
+        ctx.fillText(win ? '🎉 奶蛙吃撑啦！' : '⏹ 游戏结束', canvas.width / 2, canvas.height / 2);
         ctx.textAlign = 'left';
-        return;
     }
-
-    requestAnimationFrame(gameLoop);
 }
 
-gameLoop();
+function moveFrog(dx, dy) {
+    if (!playing) return;
+    const nx = frogs.x + dx;
+    const ny = frogs.y + dy;
+    if (map[ny] && map[ny][nx] !== 1) {
+        frogs.x = nx;
+        frogs.y = ny;
+    }
+    if (map[frogs.y][frogs.x] === 2) {
+        map[frogs.y][frogs.x] = 0;
+        score++;
+        if (score >= totalBeans) finishGame(true);
+    }
+    if (enemies.some(enemy => enemy.x === frogs.x && enemy.y === frogs.y)) finishGame(false);
+    draw();
+}
+
+function moveEnemies() {
+    const directions = [[0, -1], [0, 1], [-1, 0], [1, 0]];
+    enemies.forEach(enemy => {
+        let options = directions.filter(([dx, dy]) => {
+            const nx = enemy.x + dx;
+            const ny = enemy.y + dy;
+            return map[ny] && map[ny][nx] !== 1;
+        });
+        if (!options.length) return;
+        let choice = options.find(([dx, dy]) => dx === enemy.dx && dy === enemy.dy);
+        if (!choice || Math.random() < 0.25) choice = options[Math.floor(Math.random() * options.length)];
+        enemy.dx = choice[0];
+        enemy.dy = choice[1];
+        enemy.x += enemy.dx;
+        enemy.y += enemy.dy;
+    });
+    if (enemies.some(enemy => enemy.x === frogs.x && enemy.y === frogs.y)) finishGame(false);
+}
+
+function finishGame(didWin) {
+    if (!playing) return;
+    win = didWin;
+    gameOver = true;
+    playing = false;
+    endButton.disabled = true;
+    statusEl.textContent = didWin ? '🎉 恭喜！吃完所有奶豆了！' : '💀 被奶蛋抓住了，再试一次吧！';
+    statusEl.style.color = didWin ? '#00ff00' : '#ff7777';
+    draw();
+}
+
+function gameLoop(timestamp) {
+    if (!playing) return;
+    const settings = enemySettings[difficultySelect.value];
+    if (!lastEnemyMove || timestamp - lastEnemyMove >= settings.interval) {
+        moveEnemies();
+        lastEnemyMove = timestamp;
+    }
+    draw();
+    if (playing) animationId = requestAnimationFrame(gameLoop);
+}
+
+const directionMap = {
+    ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0]
+};
+document.addEventListener('keydown', event => {
+    const direction = directionMap[event.key];
+    if (!direction) return;
+    event.preventDefault();
+    moveFrog(direction[0], direction[1]);
+});
+document.querySelectorAll('.touch-controls button').forEach(button => {
+    button.addEventListener('click', () => {
+        const directions = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] };
+        const direction = directions[button.dataset.dir];
+        moveFrog(direction[0], direction[1]);
+    });
+});
+startButton.addEventListener('click', startGame);
+endButton.addEventListener('click', endGame);
+draw();
 </script>
 </body>
 </html>
