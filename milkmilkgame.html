@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>奶蛙吃奶豆</title>
+<style>
+    body { background: #111; color: #fff; text-align: center; font-family: sans-serif; margin: 0; padding: 20px; }
+    canvas { background: #000; display: block; margin: 10px auto; border: 4px solid #ffcc00; border-radius: 10px; }
+    .uploads { margin: 10px 0; }
+    .uploads label { margin: 0 10px; cursor: pointer; background: #333; padding: 8px 14px; border-radius: 5px; display: inline-block; }
+    .uploads label:hover { background: #555; }
+    .status { color: #ffcc00; font-weight: bold; margin: 10px 0; font-size: 16px; }
+    .hint { color: #aaa; margin-top: 10px; font-size: 13px; }
+</style>
+</head>
+<body>
+
+<h1>🐸 奶蛙吃奶豆 🟡</h1>
+<div class="uploads">
+    <label>① 奶蛙(图1) <input type="file" id="upFrog" accept="image/*"></label>
+    <label>② 奶豆(图2) <input type="file" id="upBean" accept="image/*"></label>
+    <label>③ 奶蛋(图3) <input type="file" id="upNaidan" accept="image/*"></label>
+</div>
+<div class="status" id="status">⏳ 请上传全部3张图片后开始游戏</div>
+<p class="hint">方向键：按一下走一格 ｜ 吃完所有奶豆获胜 ｜ 躲避奶蛋</p>
+
+<canvas id="game" width="560" height="520"></canvas>
+
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const tile = 40;
+
+// 地图 (1墙, 0路, 2奶豆)
+const map = [
+    [1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+    [1,2,2,2,2,2,2,1,2,2,2,2,2,1],
+    [1,2,1,1,2,1,2,1,2,1,2,1,2,1],
+    [1,2,2,2,2,2,2,2,2,2,2,2,2,1],
+    [1,2,1,2,1,1,1,1,1,1,2,1,2,1],
+    [1,2,2,2,2,2,2,1,2,2,2,2,2,1],
+    [1,1,1,1,1,1,2,1,2,1,1,1,1,1],
+    [1,2,2,2,2,2,2,0,2,2,2,2,2,1],
+    [1,2,1,1,1,1,2,1,2,1,1,1,2,1],
+    [1,2,2,2,2,2,2,1,2,2,2,2,2,1],
+    [1,2,1,2,1,2,1,1,1,2,1,2,1,1],
+    [1,2,2,2,2,2,2,2,2,2,2,2,2,1],
+    [1,1,1,1,1,1,1,1,1,1,1,1,1,1]
+];
+
+let totalBeans = 0;
+map.forEach(row => row.forEach(c => { if(c===2) totalBeans++; }));
+
+// 图片
+const imgs = { frog: null, bean: null, naidan: null };
+let ready = false;
+
+function checkReady() {
+    if(imgs.frog && imgs.bean && imgs.naidan) {
+        ready = true;
+        document.getElementById('status').innerText = '✅ 就绪！方向键开始（按一下走一格）';
+        document.getElementById('status').style.color = '#00ff00';
+    }
+}
+
+['upFrog','upBean','upNaidan'].forEach((id, i) => {
+    document.getElementById(id).onchange = e => {
+        const key = ['frog','bean','naidan'][i];
+        const file = e.target.files[0];
+        if(!file) return;
+        const reader = new FileReader();
+        reader.onload = ev => {
+            imgs[key] = new Image();
+            imgs[key].src = ev.target.result;
+            checkReady();
+        };
+        reader.readAsDataURL(file);
+    };
+});
+
+// 游戏状态
+let score = 0, gameOver = false, win = false;
+let frameCount = 0;
+
+const frog = { x: 7, y: 7, dx: 0, dy: 0 };
+
+// 只有一个奶蛋，放在右上角
+const naidan = { x: 12, y: 1, dx: -1, dy: 0 };
+
+function drawMap() {
+    for(let y=0; y<map.length; y++) {
+        for(let x=0; x<map[y].length; x++) {
+            const v = map[y][x];
+            if(v===1) {
+                ctx.fillStyle = '#0044ff';
+                ctx.fillRect(x*tile, y*tile, tile, tile);
+            } else {
+                ctx.fillStyle = '#000';
+                ctx.fillRect(x*tile, y*tile, tile, tile);
+                if(v===2) {
+                    if(imgs.bean) {
+                        ctx.drawImage(imgs.bean, x*tile+8, y*tile+8, 24, 24);
+                    } else {
+                        ctx.fillStyle = '#ffcc00';
+                        ctx.beginPath();
+                        ctx.arc(x*tile+20, y*tile+20, 6, 0, Math.PI*2);
+                        ctx.fill();
+                    }
+                }
+            }
+        }
+    }
+}
+
+function drawFrog() {
+    if(imgs.frog) {
+        ctx.drawImage(imgs.frog, frog.x*tile, frog.y*tile, tile, tile);
+    } else {
+        ctx.fillStyle = '#00ff00';
+        ctx.beginPath();
+        ctx.arc(frog.x*tile+20, frog.y*tile+20, 16, 0, Math.PI*2);
+        ctx.fill();
+    }
+}
+
+function drawNaidan() {
+    if(imgs.naidan) {
+        ctx.drawImage(imgs.naidan, naidan.x*tile, naidan.y*tile, tile, tile);
+    } else {
+        ctx.fillStyle = '#ff4444';
+        ctx.beginPath();
+        ctx.arc(naidan.x*tile+20, naidan.y*tile+20, 16, 0, Math.PI*2);
+        ctx.fill();
+    }
+}
+
+function moveFrog() {
+    if(!ready || gameOver) return;
+    const nx = frog.x + frog.dx, ny = frog.y + frog.dy;
+    if(map[ny] && map[ny][nx] !== 1) {
+        frog.x = nx; frog.y = ny;
+    }
+    frog.dx = 0; frog.dy = 0; // 走一格停
+
+    if(map[frog.y][frog.x] === 2) {
+        map[frog.y][frog.x] = 0;
+        score++;
+        if(score >= totalBeans) { win = true; gameOver = true; }
+    }
+}
+
+function moveNaidan() {
+    const nx = naidan.x + naidan.dx, ny = naidan.y + naidan.dy;
+    if(map[ny] && map[ny][nx] !== 1) {
+        naidan.x = nx; naidan.y = ny;
+    } else {
+        const dirs = [[0,-1],[0,1],[-1,0],[1,0]];
+        const d = dirs[Math.floor(Math.random()*4)];
+        naidan.dx = d[0]; naidan.dy = d[1];
+    }
+    if(naidan.x === frog.x && naidan.y === frog.y) {
+        gameOver = true; win = false;
+    }
+}
+
+document.addEventListener('keydown', e => {
+    if(!ready || gameOver) return;
+    if(e.key==='ArrowUp')    { frog.dx=0; frog.dy=-1; moveFrog(); }
+    if(e.key==='ArrowDown')  { frog.dx=0; frog.dy=1;  moveFrog(); }
+    if(e.key==='ArrowLeft')  { frog.dx=-1; frog.dy=0; moveFrog(); }
+    if(e.key==='ArrowRight') { frog.dx=1;  frog.dy=0; moveFrog(); }
+});
+
+function gameLoop() {
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    drawMap();
+
+    if(ready && !gameOver) {
+        // 奶蛙移动在keydown里触发，这里不重复
+        frameCount++;
+        if(frameCount % 4 === 0) moveNaidan(); // 奶蛋极慢：每4帧才走1步
+    }
+
+    drawFrog();
+    drawNaidan();
+
+    // UI
+    ctx.fillStyle = '#fff';
+    ctx.font = '16px sans-serif';
+    ctx.fillText(`奶豆: ${score} / ${totalBeans}`, 10, 20);
+
+    if(gameOver) {
+        ctx.fillStyle = 'rgba(0,0,0,0.88)';
+        ctx.fillRect(0,0,canvas.width,canvas.height);
+        ctx.fillStyle = win ? '#00ff00' : '#ff0000';
+        ctx.font = 'bold 36px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(win ? '🎉 奶蛙吃撑啦！' : '💀 被奶蛋抓住了！', canvas.width/2, canvas.height/2);
+        ctx.fillStyle = '#fff';
+        ctx.font = '20px sans-serif';
+        ctx.fillText('刷新页面重新开始', canvas.width/2, canvas.height/2+40);
+        ctx.textAlign = 'left';
+        return;
+    }
+
+    requestAnimationFrame(gameLoop);
+}
+
+gameLoop();
+</script>
+</body>
+</html>
